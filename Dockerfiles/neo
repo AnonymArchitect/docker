@@ -1,0 +1,37 @@
+FROM jboss/wildfly-admin
+# changing to root
+USER root
+# update the fedora base image
+run yum -y update
+# install wget and lsof for neo4j
+run yum -y install wget lsof
+# getting an installin neo4j in /opt/neo4j/
+run wget -qO- http://neo4j.com/artifact.php?name=neo4j-community-2.2.2-unix.tar.gz | tar -zx -C /opt/
+run ln -s /opt/neo4j-community-2.2.2 /opt/neo4j
+# reconfiguring the neo4j server including the user/password...
+run sed -i "s|#node_auto_indexing|node_auto_indexing|g" /opt/neo4j/conf/neo4j.properties && \
+    sed -i "s|#node_keys_indexable|node_keys_indexable|g" /opt/neo4j/conf/neo4j.properties && \ 
+    sed -i "s|#org.neo4j.server.webserver.address=0.0.0.0|org.neo4j.server.webserver.address=0.0.0.0|g" /opt/neo4j/conf/neo4j-server.properties && \ 
+    echo "remote_shell_host=0.0.0.0" >> /opt/neo4j/conf/neo4j.properties && \
+    mkdir -p /opt/neo4j/data/dbms && \
+    echo "neo4j:SHA-256,68E0027B9053A9ECE60337D029B5973C143297B5B24123431A3CA07ACE2158B8,667406785226F2C72B426A57379CEDA6:" >> /opt/neo4j/data/dbms/auth
+
+# install neo4j jdbc driver
+run  wget -q --no-check-certificate -O $JBOSS_HOME/standalone/deployments/neo4j-jdbc-2.1.4-jar-with-dependencies.jar  https://m2.neo4j.org/content/repositories/releases/org/neo4j/neo4j-jdbc/2.1.4/neo4j-jdbc-2.1.4-jar-with-dependencies.jar
+run sed -i "s|<datasources>|<datasources>\n <datasource jta=\"true\" jndi-name=\"java:jboss/datasources/Neo4jDS\" pool-name=\"neo4j\" enabled=\"true\" use-ccm=\"true\">\n  <connection-url>jdbc:neo4j://localhost:7474</connection-url>\n   <driver-class>org.neo4j.jdbc.Driver</driver-class>\n   <driver>neo4j-jdbc-2.1.4-jar-with-dependencies.jar</driver>\n   <security><user-name>neo4j</user-name><password>neoruv</password></security>\n   <validation><validate-on-match>false</validate-on-match><background-validation>false</background-validation></validation>\n   <timeout><set-tx-query-timeout>false</set-tx-query-timeout><blocking-timeout-millis>0</blocking-timeout-millis><idle-timeout-minutes>0</idle-timeout-minutes><query-timeout>0</query-timeout><use-try-lock>0</use-try-lock><allocation-retry>0</allocation-retry><allocation-retry-wait-millis>0</allocation-retry-wait-millis></timeout>\n   <statement><share-prepared-statements>false</share-prepared-statements></statement>\n </datasource>|g" $JBOSS_HOME/standalone/configuration/standalone.xml
+
+# expose REST and shell server ports
+expose 1337
+expose 7473
+expose 7474
+
+workdir /
+
+## starting neo4j and wildfly 8.2
+cmd ["/bin/bash", "-c", "/opt/neo4j/bin/neo4j start && /opt/jboss/wildfly/bin/standalone.sh -b 0.0.0.0 -bmanagement 0.0.0.0"]
+
+### backup section
+#cmd ["/bin/bash", "-c", "/opt/neo4j/bin/neo4j start"]
+#CMD ["/opt/neo4j/bin/neo4j", "start"]
+#USER jboss
+#CMD ["/opt/jboss/wildfly/bin/standalone.sh", "-b", "0.0.0.0", "-bmanagement", "0.0.0.0"]
